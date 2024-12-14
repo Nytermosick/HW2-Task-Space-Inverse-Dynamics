@@ -8,7 +8,7 @@ import scipy
 import matplotlib.pyplot as plt
 
 ####################
-trajectory = True # if True manipulator will move along a circular trajectory
+trajectory = False # if True manipulator will move along a circular trajectory
 cube = False # if True manipulator wiil move move after the cube
 plots = False # if True plots will be drawn
 ####################
@@ -29,9 +29,7 @@ def so3_error(Rd, R):
 
 def skew_to_vector(skew_matrix):
     """Extract the vector from a skew-symmetric matrix"""
-    return np.array([[skew_matrix[2, 1]],
-                     [skew_matrix[0, 2]],
-                     [skew_matrix[1, 0]]])
+    return np.array([skew_matrix[2, 1], skew_matrix[0, 2], skew_matrix[1, 0]])
 
 def plot_results(times: np.ndarray, positions: np.ndarray, velocities: np.ndarray, control: np.ndarray):
     """Plot and save simulation results."""
@@ -72,9 +70,6 @@ def plot_results(times: np.ndarray, positions: np.ndarray, velocities: np.ndarra
     plt.savefig('logs/plots/controls_trajectory.png')
     plt.close()
 
-
-import numpy as np
-
 def circular_trajectory(t, center, radius, omega):
     """
     Set circular trajectory.
@@ -97,9 +92,9 @@ def circular_trajectory(t, center, radius, omega):
     ay = 0
     az = -radius * omega**2 * np.sin(omega * t)
     
-    position = np.array([x, y, z]).reshape(-1, 1) # conversion to a column vector
-    velocity = np.array([vx, vy, vz, 0, 0, 0]).reshape(-1, 1) # conversion to a column vector
-    acceleration = np.array([ax, ay, az, 0, 0, 0]).reshape(-1, 1) # conversion to a column vector
+    position = np.array([x, y, z]) # conversion to a column vector
+    velocity = np.array([vx, vy, vz, 0, 0, 0]) # conversion to a column vector
+    acceleration = np.array([ax, ay, az, 0, 0, 0]) # conversion to a column vector
     
     return position, velocity, acceleration
 
@@ -135,46 +130,28 @@ def task_space_controller(q: np.ndarray, dq: np.ndarray, t: float, desired: Dict
 
             # Creating a rotation matrix
             R_des = pin.XYZQUATToSE3(desired_pose).rotation
-            p_des = p_des.reshape(-1, 1) # conversion to a column vector
 
         else:
             # Desired values
-            p_des = np.array([[0.1],          # x_des, m
-                              [-0.35],        # y_des, m
-                              [0.4],          # z_des, m
-                             ])
+            p_des = np.array([0.2, 0.35, 0.5])
 
             # Euler angles (roll, pitch, yaw) in grad
-            roll = np.deg2rad(45)
-            pitch = np.deg2rad(45)
-            yaw = np.deg2rad(-45)
+            roll = np.deg2rad(0)
+            pitch = np.deg2rad(0)
+            yaw = np.deg2rad(0)
 
             # Creating a rotation matrix
             R_des = pin.utils.rpyToMatrix(roll, pitch, yaw)
 
 
-        dp_des = np.array([[0],             # linear speed dx_des, m/s
-                           [0],             # linear speed dy_des, m/s
-                           [0],             # linear speed dz_des, m/s
-                           [np.deg2rad(0)], # the angular speed around the axis x, rad/s
-                           [np.deg2rad(0)], # the angular speed around the axis y, rad/s
-                           [np.deg2rad(0)], # the angular speed around the axis z, rad/s
-                          ])
-
-
-        ddp_des = np.array([[0],             # linear acceleration ddx_des, m/s^2
-                            [0],             # linear acceleration ddy_des, m/s^2
-                            [0],             # linear acceleration ddz_des, m/s^2
-                            [np.deg2rad(0)], # the angular acceleration around the axis x, rad/s^2
-                            [np.deg2rad(0)], # the angular acceleration around the axis y, rad/s^2
-                            [np.deg2rad(0)], # the angular acceleration around the axis z, rad/s^2
-                           ])
+        dp_des = np.zeros(6)
+        ddp_des = np.zeros(6)
 
 
     # PD Gains
-    Kp = np.diag([200, 200, 200, 150, 150, 150]) # Proportional coefficients
+    Kp = np.diag([100, 100, 100, 100, 100, 100]) # Proportional coefficients
 
-    Kd = np.diag([40, 40, 40, 30, 30, 30]) # Derriative coefficients
+    Kd = np.diag([20, 20, 20, 20, 20, 20]) # Derriative coefficients
 
     ###################################################################################################
     
@@ -193,19 +170,19 @@ def task_space_controller(q: np.ndarray, dq: np.ndarray, t: float, desired: Dict
 
     # Get current position and orientation of end-effector
     ee_pose = data.oMf[ee_frame_id]
-    p = ee_pose.translation.reshape(-1, 1) # conversion to a column vector
+    p = ee_pose.translation # conversion to a column vector
     #print('pos\n', p)
     R = ee_pose.rotation
     #print('orient\n', R)
 
     # Get current velocities of end-effector
     twist = pin.getFrameVelocity(model, data, ee_frame_id, frame)
-    v = twist.linear.reshape(-1, 1) # conversion to a column vector
-    w = twist.angular.reshape(-1, 1) # conversion to a column vector
-    dp = np.vstack((v, w)) # column vector of current speed in local coordinate frame
+    v = twist.linear # conversion to a column vector
+    w = twist.angular # conversion to a column vector
+    dp = np.hstack((v, w)) # column vector of current speed in local coordinate frame
 
-    desired_twist = ee_pose.actInv(pin.Motion(dp_des.flatten())) # conversion desired speed vector to local coordinate frame
-    dp_des_local = np.hstack([desired_twist.linear, desired_twist.angular]).reshape(-1, 1) # column vector of desired speed in local coordinate frame
+    desired_twist = ee_pose.actInv(pin.Motion(dp_des)) # conversion desired speed vector to local coordinate frame
+    dp_des_local = np.hstack([desired_twist.linear, desired_twist.angular]) # column vector of desired speed in local coordinate frame
 
 
     # Get Mass Matrix and Nonlinear effects (Coriolis + gravity) Matrix
@@ -220,7 +197,7 @@ def task_space_controller(q: np.ndarray, dq: np.ndarray, t: float, desired: Dict
 
     # Conversion desired accelerations of end-effector in local coordinate frame
     desired_acc = ee_pose.actInv(pin.Motion(ddp_des[:3], ddp_des[3:]))
-    ddp_des_local = np.hstack([desired_acc.linear, desired_acc.angular]).reshape(-1, 1) # column vector of desired accelerations in local coordinate frame
+    ddp_des_local = np.hstack([desired_acc.linear, desired_acc.angular]) # column vector of desired accelerations in local coordinate frame
 
     # Evaluating errors
     p_err = p_des - p
@@ -229,7 +206,7 @@ def task_space_controller(q: np.ndarray, dq: np.ndarray, t: float, desired: Dict
     rot_err = so3_error(R_des, R)
     print('err orient\n', rot_err)
 
-    pose_err = np.vstack((p_err, rot_err)) # total column-vector of errors by position and orientation
+    pose_err = np.hstack((p_err, rot_err)) # total column-vector of errors by position and orientation
 
     dp_err = dp_des_local - dp # column-vector of errors by speed
     print('speed err\n', dp_err, '\n')
@@ -237,10 +214,10 @@ def task_space_controller(q: np.ndarray, dq: np.ndarray, t: float, desired: Dict
     # Control
     ddp = Kp @ pose_err + Kd @ dp_err + ddp_des_local
 
-    ddq_des = np.linalg.pinv(J) @ (ddp - dJ @ dq.reshape(-1, 1))
+    ddq_des = np.linalg.pinv(J) @ (ddp - dJ @ dq)
 
-    tau = M @ ddq_des + h.reshape(-1, 1) # column-vector of torques on joints
-    return tau.flatten()
+    tau = M @ ddq_des + h # column-vector of torques on joints
+    return tau
 
 def main():
     # Create logging directories
